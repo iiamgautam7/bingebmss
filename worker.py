@@ -3,6 +3,7 @@ import time
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
+from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
 from config import DB_PATH, FLASK_BASE, HEADLESS
 
@@ -14,7 +15,6 @@ def get_pending_requests():
     c = conn.cursor()
     rows = c.execute("SELECT * FROM requests WHERE status = 'PENDING' ORDER BY created_at").fetchall()
     conn.close()
-    print(f"Found {len(rows)} pending requests.")
     return rows
 
 def mark_request_processed(request_id, status):
@@ -39,10 +39,8 @@ def setup_driver():
         options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    if not HEADLESS:
-        options.add_argument("--start-maximized")
-
-    service = Service(r"C:\Windows\chromedriver.exe")
+    # create driver via webdriver-manager
+    service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
     return driver
 
@@ -53,33 +51,38 @@ def process_request(req, driver):
     showtime = req["showtime"]
 
     try:
-        print(f"Processing Request ID: {req_id} for user: {username}, movie: {movie}, showtime: {showtime}")
+        # 1) Visit index to ensure site up
         driver.get(FLASK_BASE + "/")
-        time.sleep(0.5)
+        time.sleep(3)
 
+        # 2) Login page — simple flow: go to /login, enter username, submit
         driver.get(FLASK_BASE + "/login")
         username_field = driver.find_element(By.NAME, "username")
         username_field.clear()
         username_field.send_keys(username)
         driver.find_element(By.CSS_SELECTOR, "button").click()
-        time.sleep(0.5)
+        time.sleep(3)
 
-        movie_escaped = movie.replace(" ", "%20")
-        driver.get(FLASK_BASE + f"/movie/{movie_escaped}")
-        time.sleep(0.5)
+        # 3) Navigate to movie page
+        driver.get(FLASK_BASE + f"/movie/{movie}")
+        time.sleep(3)
 
+        # 4) select showtime and submit form (the site expects a POST)
         select = driver.find_element(By.NAME, "showtime")
+        # choose option with matching text
         for option in select.find_elements(By.TAG_NAME, "option"):
             if option.text.strip() == showtime.strip():
                 option.click()
                 break
 
+        # click the submit button
         driver.find_element(By.CSS_SELECTOR, "button").click()
-        time.sleep(0.5)
+        time.sleep(3)
 
+        # success: update DB
         mark_request_processed(req_id, "BOOKED")
         log_booking(req_id, username, movie, showtime, "BOOKED")
-        print(f"[OK] Successfully booked request {req_id} by {username} movie '{movie}' at {showtime}")
+        print(f"[OK] Request {req_id} by {username} booked {movie} {showtime}")
         return True
 
     except Exception as e:
@@ -92,10 +95,10 @@ def process_request(req, driver):
         return False
 
 def main():
-    print("Worker started, scanning pending requests...")
+    print("Worker started, looking for pending requests...")
     rows = get_pending_requests()
     if not rows:
-        print("No pending requests found. Exiting.")
+        print("No pending requests. Exiting.")
         return
 
     driver = setup_driver()
@@ -106,5 +109,5 @@ def main():
         driver.quit()
         print("Worker finished.")
 
-if __name__ == "__main__":
+if __name__ == "_main_":
     main()

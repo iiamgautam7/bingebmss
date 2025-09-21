@@ -41,6 +41,13 @@ pipeline {
             }
         }
 
+        stage('Init DB') {
+            steps {
+                bat """
+                    "${VENV}\\Scripts\\python.exe" db_init.py
+                    """
+            }
+        }
         stage('Archive DB & Logs') {
             steps {
                 archiveArtifacts artifacts: '*.db', fingerprint: true
@@ -55,42 +62,19 @@ pipeline {
         }
 
         success {
-            script {
-                // Extract latest bookings into an HTML table
-                bat """
-                "%VENV%\\Scripts\\python.exe" - <<EOF
-import sqlite3, html
-
-conn = sqlite3.connect(r'%DB%')
-cursor = conn.cursor()
-cursor.execute("SELECT id, username, movie, showtime, created_at FROM requests ORDER BY created_at DESC LIMIT 10")
-rows = cursor.fetchall()
-
-html_content = ["<h2>Latest Booking Details</h2>",
-                "<table border='1' cellpadding='5' cellspacing='0' style='border-collapse: collapse;'>",
-                "<tr><th>ID</th><th>User</th><th>Movie</th><th>Showtime</th><th>Created At</th></tr>"]
-
-for row in rows:
-    html_content.append("<tr>" + "".join(f"<td>{html.escape(str(col))}</td>" for col in row) + "</tr>")
-
-html_content.append("</table>")
-with open("booking_report.html", "w", encoding="utf-8") as f:
-    f.write("".join(html_content))
-conn.close()
-EOF
-                """
-
-                def report = readFile('booking_report.html')
-
-                emailext (
-                    to: 'gauatambanoth@gmail.com',
-                    subject: "✅ Movie Booker - Build SUCCESS",
-                    body: """<p>Build completed successfully!</p>${report}""",
-                    mimeType: 'text/html'
-                )
-            }
-        }
-
+    script {
+        bat """
+        "${VENV}\\Scripts\\python.exe" generate_report.py
+        """
+        def report = readFile('booking_report.html')
+        emailext (
+            to: 'gauatambanoth@gmail.com',
+            subject: "✅ Movie Booker - Build SUCCESS",
+            body: """<p>Build completed successfully!</p>${report}""",
+            mimeType: 'text/html'
+        )
+    }
+}
         failure {
             emailext (
                 to: 'gauatambanoth@gmail.com',
@@ -101,3 +85,4 @@ EOF
         }
     }
 }
+

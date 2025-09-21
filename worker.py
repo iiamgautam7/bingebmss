@@ -63,40 +63,33 @@ def process_request(req, driver):
     try:
         print(f"Processing Request ID: {req_id} for user: {username}, movie: {movie}, showtime: {showtime}")
 
-        # Visit homepage to check server availability
         driver.get(FLASK_BASE + "/")
         time.sleep(0.5)
 
-        # Go to login page
         driver.get(FLASK_BASE + "/login")
 
-        # Explicit wait for username field presence
-        wait = WebDriverWait(driver, 10)
+        wait = WebDriverWait(driver, 20)
         username_field = wait.until(EC.presence_of_element_located((By.NAME, "username")))
 
-        # Enter username and submit login
         username_field.clear()
         username_field.send_keys(username)
+
         driver.find_element(By.CSS_SELECTOR, "button").click()
         time.sleep(0.5)
 
-        # Navigate to movie page (escape spaces)
         movie_escaped = movie.replace(" ", "%20")
         driver.get(FLASK_BASE + f"/movie/{movie_escaped}")
         time.sleep(0.5)
 
-        # Select appropriate showtime
         select = driver.find_element(By.NAME, "showtime")
         for option in select.find_elements(By.TAG_NAME, "option"):
             if option.text.strip() == showtime.strip():
                 option.click()
                 break
 
-        # Submit booking form
         driver.find_element(By.CSS_SELECTOR, "button").click()
         time.sleep(0.5)
 
-        # Mark as booked in DB
         mark_request_processed(req_id, "BOOKED")
         log_booking(req_id, username, movie, showtime, "BOOKED")
         print(f"[OK] Successfully booked request {req_id} by {username} movie '{movie}' at {showtime}")
